@@ -37,7 +37,7 @@ const ACTION_CARDS = [
         icon: <ShoppingBag size={36} />,
         label: 'Place an Order',
         description: 'Send a purchase order to a supplier via WhatsApp',
-        to: '/purchase-orders',
+        to: '/purchase-orders?action=new',
         color: '#e11d48',
         roleRequired: 'orders',
     },

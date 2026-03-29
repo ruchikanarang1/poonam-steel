@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 import { getSuppliers, getPurchaseOrders, addPurchaseOrder } from '../lib/db';
 import { Plus, ShoppingCart, Clock, PackageCheck, PackageSearch, Truck, FileText, Send } from 'lucide-react';
 
@@ -11,6 +12,9 @@ const statusConfig = {
 
 export default function PurchaseOrders() {
     const { currentUser, userData, isAdmin } = useAuth();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const autoOpen = searchParams.get('action') === 'new';
+
     const [orders, setOrders] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -33,8 +37,11 @@ export default function PurchaseOrders() {
     const hasAccess = isAdmin || roles.includes('orders');
 
     useEffect(() => {
-        if (hasAccess) loadData();
-    }, [hasAccess]);
+        if (hasAccess) {
+            loadData();
+            if (autoOpen) setShowModal(true);
+        }
+    }, [hasAccess, autoOpen]);
 
     useEffect(() => {
         // Close autocomplete on outside click
@@ -172,28 +179,37 @@ Thank you for your continued partnership.
                 </button>
             </div>
 
-            {/* Status filter pills */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: 'var(--spacing-lg)', flexWrap: 'wrap' }}>
-                {['all', 'pending', 'partial', 'received'].map(f => (
-                    <button
-                        key={f}
-                        onClick={() => setFilter(f)}
-                        style={{
-                            padding: '0.3rem 0.9rem', borderRadius: '20px', border: '2px solid',
-                            cursor: 'pointer', fontSize: '0.85rem', fontWeight: filter === f ? 'bold' : 'normal',
-                            background: filter === f ? 'var(--color-primary)' : 'white',
-                            color: filter === f ? 'white' : 'var(--color-text)',
-                            borderColor: filter === f ? 'var(--color-primary)' : '#dee2e6',
-                            transition: 'all 0.15s'
-                        }}
-                    >
-                        {f === 'all' ? 'All Orders' : statusConfig[f]?.label}
-                        <span style={{ marginLeft: '0.4rem', fontWeight: 'bold' }}>
-                            ({f === 'all' ? orders.length : orders.filter(o => o.status === f).length})
-                        </span>
-                    </button>
-                ))}
-            </div>
+            {/* Status filter pills - ONLY for Admin */}
+            {isAdmin && (
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: 'var(--spacing-lg)', flexWrap: 'wrap' }}>
+                    {['all', 'pending', 'partial', 'received'].map(f => (
+                        <button
+                            key={f}
+                            onClick={() => setFilter(f)}
+                            style={{
+                                padding: '0.3rem 0.9rem', borderRadius: '20px', border: '2px solid',
+                                cursor: 'pointer', fontSize: '0.85rem', fontWeight: filter === f ? 'bold' : 'normal',
+                                background: filter === f ? 'var(--color-primary)' : 'white',
+                                color: filter === f ? 'white' : 'var(--color-text)',
+                                borderColor: filter === f ? 'var(--color-primary)' : '#dee2e6',
+                                transition: 'all 0.15s'
+                            }}
+                        >
+                            {f === 'all' ? 'All Orders' : statusConfig[f]?.label}
+                            <span style={{ marginLeft: '0.4rem', fontWeight: 'bold' }}>
+                                ({f === 'all' ? orders.length : orders.filter(o => o.status === f).length})
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* If employee, just show a simple title above the list */}
+            {!isAdmin && (
+                <div style={{ marginBottom: '1.5rem', borderBottom: '2px solid var(--color-primary)', display: 'inline-block', paddingBottom: '0.3rem' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--color-primary)' }}>My Placed Orders</h3>
+                </div>
+            )}
 
             {/* Order list */}
             {filtered.length === 0 ? (
@@ -225,14 +241,22 @@ Thank you for your continued partnership.
                                     </div>
                                 </div>
                                 <div style={{ padding: '0.6rem 1.25rem', display: 'flex', gap: '1.5rem', fontSize: '0.82rem', color: 'gray' }}>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                        <Truck size={14} color={order.transportEntryId ? '#198754' : '#adb5bd'} />
-                                        Transport: <strong style={{ color: order.transportEntryId ? '#198754' : '#adb5bd' }}>{order.transportEntryId ? 'Linked' : 'Awaiting'}</strong>
-                                    </span>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                        <FileText size={14} color={order.billEntryId ? '#198754' : '#adb5bd'} />
-                                        Bill: <strong style={{ color: order.billEntryId ? '#198754' : '#adb5bd' }}>{order.billEntryId ? 'Linked' : 'Awaiting'}</strong>
-                                    </span>
+                                    {isAdmin ? (
+                                        <>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                <Truck size={14} color={order.transportEntryId ? '#198754' : '#adb5bd'} />
+                                                Transport: <strong style={{ color: order.transportEntryId ? '#198754' : '#adb5bd' }}>{order.transportEntryId ? 'Linked' : 'Awaiting'}</strong>
+                                            </span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                <FileText size={14} color={order.billEntryId ? '#198754' : '#adb5bd'} />
+                                                Bill: <strong style={{ color: order.billEntryId ? '#198754' : '#adb5bd' }}>{order.billEntryId ? 'Linked' : 'Awaiting'}</strong>
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#198754', fontWeight: 'bold' }}>
+                                            ✓ Order Placed & Logged
+                                        </span>
+                                    )}
                                     {order.placedByName && <span>Placed by: <strong>{order.placedByName}</strong></span>}
                                     {order.notes && <span>📝 {order.notes}</span>}
                                 </div>
