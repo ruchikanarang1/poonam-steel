@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { getFormConfig, saveFormConfig } from '../../lib/db';
+import { useAuth } from '../../contexts/AuthContext';
 import { Plus, Trash2, Save, GripVertical } from 'lucide-react';
 
 export default function FormBuilder() {
+    const { currentCompanyId } = useAuth();
     const [activeForm, setActiveForm] = useState('transport');
     const [fields, setFields] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -27,17 +29,22 @@ export default function FormBuilder() {
             { id: 'lr_number', label: 'LR Number (Required for Match)', type: 'text', required: true },
             { id: 'bill_amount', label: 'Bill Amount (₹)', type: 'number', required: true },
             { id: 'bill_date', label: 'Bill Date', type: 'date', required: true }
+        ],
+        vendor_brand_registry: [
+            { id: 'vendor_name', label: 'Vendor Name', type: 'text', required: true },
+            { id: 'brand_name', label: 'Brand Name', type: 'text', required: true },
+            { id: 'category', label: 'Category', type: 'text', required: false }
         ]
     };
 
     useEffect(() => {
-        loadConfig();
-    }, [activeForm]);
+        if (currentCompanyId) loadConfig();
+    }, [activeForm, currentCompanyId]);
 
     const loadConfig = async () => {
         setLoading(true);
         try {
-            const data = await getFormConfig(activeForm);
+            const data = await getFormConfig(currentCompanyId, activeForm);
             if (data && data.length > 0) {
                 setFields(data);
             } else {
@@ -54,8 +61,8 @@ export default function FormBuilder() {
     const handleSave = async () => {
         setLoading(true);
         try {
-            await saveFormConfig(activeForm, fields);
-            alert(`${activeForm === 'transport' ? 'Transport' : 'Billing'} Form Configuration Saved Successfully!`);
+            await saveFormConfig(currentCompanyId, activeForm, fields);
+            alert(`${activeForm.replace('_', ' ').toUpperCase()} Form Configuration Saved Successfully!`);
         } catch (err) {
             console.error('Failed to save config', err);
             alert("Error saving configuration");
@@ -114,7 +121,7 @@ export default function FormBuilder() {
                 Customize the exact data fields your employees must fill out when entering logistics records.
             </p>
 
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: 'var(--spacing-xl)' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: 'var(--spacing-xl)', flexWrap: 'wrap' }}>
                 <button
                     className={`btn ${activeForm === 'transport' ? 'btn-primary' : 'btn-outline'}`}
                     onClick={() => setActiveForm('transport')}
@@ -126,6 +133,12 @@ export default function FormBuilder() {
                     onClick={() => setActiveForm('bills')}
                 >
                     Bill Entry Form
+                </button>
+                <button
+                    className={`btn ${activeForm === 'vendor_brand_registry' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setActiveForm('vendor_brand_registry')}
+                >
+                    Vendor-Brand Registry
                 </button>
             </div>
 

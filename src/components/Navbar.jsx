@@ -1,13 +1,17 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
-import { ShoppingCart, LogOut, Menu, X, User } from 'lucide-react';
+import { ShoppingCart, LogOut, Menu, X, User, Plus, LayoutDashboard, Package } from 'lucide-react';
 
 export default function Navbar({ toggleSidebar }) {
-    const { currentUser, userData, isAdmin, loginWithGoogle, logout } = useAuth();
+    const { 
+        currentUser, userData, isAdmin, companies, 
+        currentCompanyId, switchCompany, loginWithGoogle, logout 
+    } = useAuth();
     const { cartCount } = useCart();
-    const roles = userData?.roles || [];
+    const location = useLocation();
+    const currentComp = companies.find(c => c.id === currentCompanyId);
 
     return (
         <nav style={{ background: 'var(--color-primary)', boxShadow: 'var(--shadow-sm)', padding: 'var(--spacing-md) 0', position: 'sticky', top: 0, zIndex: 1001 }}>
@@ -25,13 +29,81 @@ export default function Navbar({ toggleSidebar }) {
 
                     <Link to="/" style={{ fontWeight: '800', color: 'var(--color-accent-blue)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                         <div style={{ width: '20px', height: '20px', backgroundColor: 'var(--color-accent-orange)', borderRadius: '4px', flexShrink: 0 }}></div>
-                        <span style={{ fontSize: window.innerWidth <= 768 ? '0.85rem' : '1.25rem', whiteSpace: 'nowrap' }}>POONAM STAINLESS STEEL</span>
+                        <span style={{ fontSize: window.innerWidth <= 768 ? '0.85rem' : '1.25rem', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>
+                            {currentComp?.name || "POONAM LOGISTICS"}
+                        </span>
                     </Link>
                 </div>
 
+                {/* Center: Navigation Buttons (Catalogue / Dashboard) */}
+                <div className="hide-on-mobile" style={{ display: 'flex', gap: '0.5rem', background: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
+                    <Link 
+                        to="/catalogue" 
+                        style={{ 
+                            padding: '0.5rem 1rem', 
+                            borderRadius: '6px', 
+                            fontSize: '0.85rem', 
+                            fontWeight: '600', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '0.4rem',
+                            color: location.pathname === '/catalogue' || location.pathname === '/' ? 'white' : '#475569',
+                            background: location.pathname === '/catalogue' || location.pathname === '/' ? 'var(--color-accent-blue)' : 'transparent',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        <Package size={16} /> Catalogue
+                    </Link>
+                    {isAdmin && (
+                        <Link 
+                            to="/admin" 
+                            style={{ 
+                                padding: '0.5rem 1rem', 
+                                borderRadius: '6px', 
+                                fontSize: '0.85rem', 
+                                fontWeight: '600', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '0.4rem',
+                                color: location.pathname === '/admin' ? 'white' : '#475569',
+                                background: location.pathname === '/admin' ? 'var(--color-accent-blue)' : 'transparent',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <LayoutDashboard size={16} /> Dashboard
+                        </Link>
+                    )}
+                </div>
+
                 {/* Right Side: Navigation Links & Auth */}
-                <div style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'center' }}>
-                    <Link to="/" className="hide-on-mobile" style={{ fontWeight: '500' }}>Catalogue</Link>
+                <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+                    {companies.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <select 
+                                value={currentCompanyId || ''} 
+                                onChange={(e) => switchCompany(e.target.value)}
+                                style={{ 
+                                    padding: '0.25rem 0.5rem', 
+                                    borderRadius: '0.5rem', 
+                                    border: '1px solid #cbd5e1', 
+                                    fontSize: '0.75rem', 
+                                    background: '#f8fafc',
+                                    cursor: 'pointer',
+                                    fontWeight: '600',
+                                    color: '#475569',
+                                    maxWidth: '120px'
+                                }}
+                            >
+                                <option value="" disabled>Switch</option>
+                                {companies.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                            </select>
+                            <Link to="/setup-company" title="Add Company" style={{ color: 'var(--color-accent-orange)', display: 'flex' }}>
+                                <Plus size={20} />
+                            </Link>
+                        </div>
+                    )}
 
                     <Link to="/cart" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', position: 'relative', padding: '0.5rem' }}>
                         <ShoppingCart size={20} />

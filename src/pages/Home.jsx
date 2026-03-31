@@ -12,10 +12,7 @@ export default function Home() {
         return <Catalogue />;
     }
 
-    if (isAdmin) {
-        return <AdminOverview />;
-    }
-
-    // Logged-in employee (any role) or regular user
-    return <EmployeeDashboard />;
+    // Default to Catalogue for all logged-in users 
+    // Dashboard is reachable via the new Navbar buttons
+    return <Catalogue />;
 }

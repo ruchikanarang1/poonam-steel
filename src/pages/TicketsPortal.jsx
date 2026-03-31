@@ -10,7 +10,7 @@ const statusStyles = {
 };
 
 export default function TicketsPortal() {
-    const { currentUser, userData, isAdmin } = useAuth();
+    const { currentUser, userData, isAdmin, currentCompanyId } = useAuth();
     const [categories, setCategories] = useState([]);
     const [myTickets, setMyTickets] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -25,15 +25,15 @@ export default function TicketsPortal() {
     const hasAccess = isAdmin || roles.includes('tickets');
 
     useEffect(() => {
-        if (hasAccess) loadData();
-    }, [hasAccess]);
+        if (hasAccess && currentCompanyId) loadData();
+    }, [hasAccess, currentCompanyId]);
 
     const loadData = async () => {
         setLoading(true);
         try {
             const [cats, allTickets] = await Promise.all([
-                getTicketCategories(),
-                getTickets()
+                getTicketCategories(currentCompanyId),
+                getTickets(currentCompanyId)
             ]);
             setCategories(cats);
             // Employees only see their own tickets; admins see all
@@ -65,7 +65,7 @@ export default function TicketsPortal() {
         if (!selectedCat) return;
         setSubmitting(true);
         try {
-            await addTicket({
+            await addTicket(currentCompanyId, {
                 categoryId: selectedCat.id,
                 categoryName: selectedCat.name,
                 formData,
@@ -73,6 +73,7 @@ export default function TicketsPortal() {
                 submittedByName: userData?.displayName || currentUser.displayName || 'Employee',
                 status: 'pending',
                 reconciled: false,
+                createdAt: new Date().toISOString()
             });
             setShowModal(false);
             await loadData();

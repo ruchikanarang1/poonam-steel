@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { getProducts, addProduct, updateProduct, deleteProduct, getOrders, uploadImage, addBulkProducts } from '../lib/db';
+import { 
+    getProducts, addProduct, updateProduct, deleteProduct, 
+    getOrders, uploadImage, addBulkProducts, getGlobalUnits
+} from '../lib/db';
 import { Trash2, Edit3, Plus, UploadCloud, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import TeamManagement from '../components/admin/TeamManagement';
@@ -10,10 +13,14 @@ import Reconciliation from '../components/admin/Reconciliation';
 import TicketBuilder from '../components/admin/TicketBuilder';
 import TicketReviews from '../components/admin/TicketReviews';
 import SupplierManager from '../components/admin/SupplierManager';
+import TransportManager from '../components/admin/TransportManager';
 import AdminOverview from '../components/admin/AdminOverview';
+import BrandRegistryManager from '../components/admin/BrandRegistryManager';
+import MigrationTool from '../components/admin/MigrationTool';
+import { X, Check } from 'lucide-react';
 
 export default function AdminDashboard() {
-    const { isAdmin, loginForAdminExport } = useAuth();
+    const { isAdmin, isSuperAdmin, currentCompanyId, loginForAdminExport } = useAuth();
     const [searchParams, setSearchParams] = useSearchParams();
     const activeTab = searchParams.get('tab') || 'overview';
     const setActiveTab = (tab) => setSearchParams({ tab });
@@ -21,6 +28,8 @@ export default function AdminDashboard() {
     const [products, setProducts] = useState([]);
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [units, setUnits] = useState([]);
+    const [newUnit, setNewUnit] = useState('');
 
     // Product Form State
     const [editingId, setEditingId] = useState(null);
@@ -32,15 +41,21 @@ export default function AdminDashboard() {
     const [selectedIds, setSelectedIds] = useState(new Set());
 
     useEffect(() => {
-        if (isAdmin) fetchData();
-    }, [isAdmin]);
+        if (isAdmin && currentCompanyId) fetchData();
+    }, [isAdmin, currentCompanyId]);
 
     const fetchData = async () => {
+        if (!currentCompanyId && !isSuperAdmin) return;
         setLoading(true);
         try {
-            const [pData, oData] = await Promise.all([getProducts(), getOrders()]);
+            const [pData, oData, uData] = await Promise.all([
+                getProducts(currentCompanyId), 
+                getOrders(currentCompanyId), 
+                getGlobalUnits(currentCompanyId)
+            ]);
             setProducts(pData);
             setOrders(oData);
+            setUnits(uData);
         } catch (err) {
             console.error(err);
         } finally {
@@ -119,9 +134,9 @@ export default function AdminDashboard() {
             }
 
             if (editingId) {
-                await updateProduct(editingId, dataToSave);
+                await updateProduct(currentCompanyId, editingId, dataToSave);
             } else {
-                await addProduct(dataToSave);
+                await addProduct(currentCompanyId, dataToSave);
             }
             resetForm();
             fetchData();
@@ -170,7 +185,7 @@ export default function AdminDashboard() {
                     return;
                 }
 
-                await addBulkProducts(newProducts);
+                await addBulkProducts(currentCompanyId, newProducts);
                 alert(`Successfully imported ${newProducts.length} products!`);
                 fetchData();
             } catch (err) {
@@ -207,7 +222,7 @@ export default function AdminDashboard() {
     const handleDelete = async (id) => {
         if (window.confirm('Are you sure you want to delete this product?')) {
             try {
-                await deleteProduct(id);
+                await deleteProduct(currentCompanyId, id);
                 fetchData();
             } catch (e) {
                 console.error(e);
@@ -220,7 +235,7 @@ export default function AdminDashboard() {
         if (selectedIds.size === 0) return;
         if (window.confirm(`Are you sure you want to delete ${selectedIds.size} products?`)) {
             try {
-                const deletePromises = Array.from(selectedIds).map(id => deleteProduct(id));
+                const deletePromises = Array.from(selectedIds).map(id => deleteProduct(currentCompanyId, id));
                 await Promise.all(deletePromises);
                 setSelectedIds(new Set());
                 fetchData();
@@ -339,6 +354,16 @@ export default function AdminDashboard() {
         <div className="container" style={{ padding: 'var(--spacing-xl) 0' }}>
             <div className="stack-on-mobile" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-lg)' }}>
                 <h1 style={{ color: 'var(--color-accent-blue)' }}>System Administration</h1>
+                
+                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                    {['overview', 'products', 'team', 'suppliers', 'transports', 'brand_registry', 'units', 'forms', 'reconciliation', 'migration'].map(t => (
+                        (t !== 'migration' || isSuperAdmin) && (
+                            <button key={t} onClick={() => setActiveTab(t)} className={`btn ${activeTab === t ? 'btn-primary' : 'btn-outline'}`} style={{ fontSize: '0.65rem', padding: '0.3rem 0.5rem' }}>
+                                {t.replace('_', ' ').toUpperCase()}
+                            </button>
+                        )
+                    ))}
+                </div>
 
                 {/* Bulk Upload Button */}
                 {activeTab === 'products' && (
@@ -493,6 +518,35 @@ export default function AdminDashboard() {
                         </div>
                     )}
 
+                    {activeTab === 'units' && (
+                        <div className="card" style={{ maxWidth: '400px' }}>
+                            <h3 style={{ marginBottom: '1rem', color: 'var(--color-accent-blue)' }}>Global Units</h3>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                                <input className="input-field" placeholder="e.g. Tons, Meters" value={newUnit} onChange={e => setNewUnit(e.target.value)} />
+                                <button className="btn btn-primary" onClick={async () => {
+                                    if (!newUnit.trim()) return;
+                                    const next = [...units, newUnit.trim()];
+                                    await (await import('../lib/db')).saveGlobalUnits(currentCompanyId, next);
+                                    setUnits(next);
+                                    setNewUnit('');
+                                }}>Add</button>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                {units.map(u => (
+                                    <div key={u} style={{ background: '#f1f3f5', padding: '0.4rem 0.8rem', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                                        {u}
+                                        <X size={14} style={{ cursor: 'pointer', color: '#ff4444' }} onClick={async () => {
+                                            const next = units.filter(item => item !== u);
+                                            await (await import('../lib/db')).saveGlobalUnits(currentCompanyId, next);
+                                            setUnits(next);
+                                        }} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'brand_registry' && <BrandRegistryManager />}
                     {activeTab === 'overview' && <AdminOverview />}
                     {activeTab === 'team' && <TeamManagement />}
                     {activeTab === 'forms' && <FormBuilder />}
@@ -500,6 +554,8 @@ export default function AdminDashboard() {
                     {activeTab === 'ticket_builder' && <TicketBuilder />}
                     {activeTab === 'ticket_reviews' && <TicketReviews />}
                     {activeTab === 'suppliers' && <SupplierManager />}
+                    {activeTab === 'transports' && <TransportManager />}
+                    {activeTab === 'migration' && isSuperAdmin && <MigrationTool />}
                 </>
             )}
         </div>

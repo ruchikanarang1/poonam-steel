@@ -4,23 +4,25 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Download, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function Reconciliation() {
-    const { loginForAdminExport } = useAuth();
+    const { loginForAdminExport, currentCompanyId, companies } = useAuth();
     const [transports, setTransports] = useState([]);
     const [bills, setBills] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('pending_transport');
     const [exporting, setExporting] = useState(false);
 
+    const activeCompany = companies.find(c => c.id === currentCompanyId);
+
     useEffect(() => {
-        loadData();
-    }, []);
+        if (currentCompanyId) loadData();
+    }, [currentCompanyId]);
 
     const loadData = async () => {
         setLoading(true);
         try {
             const [tData, bData] = await Promise.all([
-                getLogisticsEntries('transport'),
-                getLogisticsEntries('bills')
+                getLogisticsEntries(currentCompanyId, 'transport'),
+                getLogisticsEntries(currentCompanyId, 'bills')
             ]);
             setTransports(tData);
             setBills(bData);
@@ -70,7 +72,7 @@ export default function Reconciliation() {
             const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ properties: { title: `Poonam Steel - ${sheetTitle} (${new Date().toLocaleDateString()})` } })
+                body: JSON.stringify({ properties: { title: `${activeCompany?.name || 'ERP'} - ${sheetTitle} (${new Date().toLocaleDateString()})` } })
             });
 
             const createData = await createRes.json();

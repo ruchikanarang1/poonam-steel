@@ -11,7 +11,7 @@ const statusConfig = {
 };
 
 export default function PurchaseOrders() {
-    const { currentUser, userData, isAdmin } = useAuth();
+    const { currentUser, userData, isAdmin, currentCompanyId } = useAuth();
     const [searchParams, setSearchParams] = useSearchParams();
     const autoOpen = searchParams.get('action') === 'new';
 
@@ -35,11 +35,11 @@ export default function PurchaseOrders() {
     const hasAccess = isAdmin || roles.includes('orders');
 
     useEffect(() => {
-        if (hasAccess) {
+        if (hasAccess && currentCompanyId) {
             loadData();
             if (autoOpen) setShowModal(true);
         }
-    }, [hasAccess, autoOpen]);
+    }, [hasAccess, autoOpen, currentCompanyId]);
 
     useEffect(() => {
         // Close autocomplete on outside click
@@ -55,7 +55,10 @@ export default function PurchaseOrders() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [pos, sups] = await Promise.all([getPurchaseOrders(), getSuppliers()]);
+            const [pos, sups] = await Promise.all([
+                getPurchaseOrders(currentCompanyId), 
+                getSuppliers(currentCompanyId)
+            ]);
             setOrders(pos);
             setSuppliers(sups);
         } catch (err) {
@@ -124,7 +127,7 @@ Thank you for your continued partnership.
         if (!supplierPhone.trim()) { alert('Please enter a supplier phone number.'); return; }
         setSubmitting(true);
         try {
-            const docRef = await addPurchaseOrder({
+            const docRef = await addPurchaseOrder(currentCompanyId, {
                 items,
                 supplierName: supplierInput,
                 supplierPhone,
@@ -135,7 +138,7 @@ Thank you for your continued partnership.
             });
 
             // We need the PO number — read it back from Firestore
-            const allPOs = await getPurchaseOrders();
+            const allPOs = await getPurchaseOrders(currentCompanyId);
             const newPO = allPOs.find(p => p.id === docRef.id);
             const poNumber = newPO?.poNumber || 'PO-NEW';
 

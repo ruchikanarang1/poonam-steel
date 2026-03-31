@@ -6,7 +6,7 @@ import { Trash2 } from 'lucide-react';
 
 export default function Cart() {
     const { cartItems, removeFromCart, updateQuantity, clearCart } = useCart();
-    const { currentUser, userData } = useAuth();
+    const { currentUser, userData, currentCompanyId } = useAuth();
 
     const [employeeRef, setEmployeeRef] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -22,7 +22,7 @@ export default function Cart() {
 
         setIsSubmitting(true);
         try {
-            await createOrder({
+            await createOrder(currentCompanyId, {
                 userId: currentUser.uid,
                 userEmail: currentUser.email,
                 userName: userData?.displayName || 'Unknown',

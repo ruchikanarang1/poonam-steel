@@ -1,30 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { getProducts } from '../lib/db';
+import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
-import { Search } from 'lucide-react';
+import { getProducts } from '../lib/db';
+import { Search, Package, Plus, Database } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function Catalogue() {
+    const { currentCompanyId } = useAuth();
     const [products, setProducts] = useState([]);
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('All');
     const [loading, setLoading] = useState(true);
     const { addToCart, cartItems, updateQuantity, removeFromCart } = useCart();
-    // Local string state for the editable qty input — only commits to cart on blur
+    
     const [inputValues, setInputValues] = useState({});
 
     useEffect(() => {
+        if (!currentCompanyId) return;
         const loadProducts = async () => {
+            setLoading(true);
             try {
-                const data = await getProducts();
-                if (data.length === 0) {
-                    setProducts([
-                        { id: '1', name: 'TMT Bar 12mm', category: 'TMT Bars', description: 'High-strength deformed steel bars.', price: null, dimensions: '12mm x 12m' },
-                        { id: '2', name: 'MS Angle 40x40x5', category: 'Structural Steel', description: 'Mild steel equal angle.', price: null, dimensions: '40mm x 40mm x 5mm' },
-                        { id: '3', name: 'HR Coil 2mm', category: 'Coils & Sheets', description: 'Hot rolled steel coil.', price: 120, dimensions: '2mm Thickness' }
-                    ]);
-                } else {
-                    setProducts(data);
-                }
+                const data = await getProducts(currentCompanyId);
+                setProducts(data);
             } catch (err) {
                 console.error(err);
             } finally {
@@ -32,7 +29,7 @@ export default function Catalogue() {
             }
         };
         loadProducts();
-    }, []);
+    }, [currentCompanyId]);
 
     const categories = ['All', ...new Set(products.map(p => p.category))];
     const filteredProducts = products.filter(p => {
@@ -144,7 +141,33 @@ export default function Catalogue() {
                             </div>
                         );
                     })}
-                    {filteredProducts.length === 0 && <p>No products found.</p>}
+                    {filteredProducts.length === 0 && (
+                        <div style={{ 
+                            gridColumn: '1 / -1', 
+                            textAlign: 'center', 
+                            padding: '4rem 2rem', 
+                            background: 'white', 
+                            borderRadius: '12px', 
+                            border: '1px dashed var(--color-border)' 
+                        }}>
+                            <Package size={48} style={{ color: '#cbd5e1', marginBottom: '1rem' }} />
+                            <h3 style={{ color: 'var(--color-accent-blue)', marginBottom: '0.5rem' }}>No products found</h3>
+                            <p style={{ color: 'var(--color-text-light)', marginBottom: '2rem', maxWidth: '400px', margin: '0 auto 2rem' }}>
+                                This company doesn't have any products in its catalogue yet.
+                            </p>
+                            
+                            {useAuth().isAdmin && (
+                                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                    <Link to="/admin?tab=products" className="btn btn-primary" style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <Plus size={18} /> Add First Product
+                                    </Link>
+                                    <Link to="/admin?tab=migration" className="btn btn-outline" style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <Database size={18} /> Migrate Legacy Data
+                                    </Link>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
         </div>

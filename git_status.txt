@@ -1,0 +1,30 @@
+﻿ M src/App.jsx
+ M src/components/Navbar.jsx
+ M src/components/ProfileSetup.jsx
+ M src/components/Sidebar.jsx
+ M src/components/admin/AdminOverview.jsx
+ M src/components/admin/FormBuilder.jsx
+ M src/components/admin/Reconciliation.jsx
+ M src/components/admin/SupplierManager.jsx
+ M src/components/admin/TeamManagement.jsx
+ M src/components/admin/TicketBuilder.jsx
+ M src/components/admin/TicketReviews.jsx
+ M src/contexts/AuthContext.jsx
+ M src/contexts/CartContext.jsx
+ M src/index.css
+ M src/lib/db.js
+ M src/pages/AdminDashboard.jsx
+ M src/pages/Cart.jsx
+ M src/pages/Catalogue.jsx
+ M src/pages/Home.jsx
+ M src/pages/LogisticsPortal.jsx
+ M src/pages/PurchaseOrders.jsx
+ M src/pages/TicketsPortal.jsx
+?? build_output.txt
+?? git_status.txt
+?? src/components/GenericAutocomplete.jsx
+?? src/components/SupplierAutocomplete.jsx
+?? src/components/admin/BrandRegistryManager.jsx
+?? src/components/admin/MigrationTool.jsx
+?? src/components/admin/TransportManager.jsx
+?? src/pages/GoodsCheckIn.jsx

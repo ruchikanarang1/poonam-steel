@@ -1,183 +1,335 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { getFormConfig, addLogisticsEntry, getPurchaseOrders, linkEntryToPurchaseOrder } from '../lib/db';
-import { Truck, FileText, Link2 } from 'lucide-react';
+import { 
+    getFormConfig, addLogisticsEntry, getPurchaseOrders, 
+    linkEntryToPurchaseOrder, getLogisticsEntries, updateLogisticsEntry,
+    getSuppliers, getTransports 
+} from '../lib/db';
+import { Truck, FileText, Plus, Calendar, Trash2, CheckCircle, AlertCircle, Send, MapPin, UserPlus, Save, LayoutGrid, Clock } from 'lucide-react';
+import GenericAutocomplete from '../components/GenericAutocomplete';
 
 export default function LogisticsPortal({ type, title }) {
-    const { currentUser, userData, isAdmin } = useAuth();
+    const { currentUser, userData, isAdmin, currentCompanyId } = useAuth();
     const [fields, setFields] = useState([]);
-    const [formData, setFormData] = useState({});
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [linkedPoId, setLinkedPoId] = useState('');
+    const [activeTab, setActiveTab] = useState('ledger'); // 'ledger' or 'pending'
+    
+    // Form State
+    const [formData, setFormData] = useState({
+        lr_number: '', date: '', time: '', vendor_name: '', transport_company: '', location: '', linkedPoId: '',
+        opened: false
+    });
+    const [dynamicData, setDynamicData] = useState({});
+    const [lots, setLots] = useState([{ id: Date.now(), lot_size: '', isShort: false, backlogQty: '', lotVendor: '', showVendor: false }]);
+    
+    // Data State
+    const [allEntries, setAllEntries] = useState([]);
     const [openPOs, setOpenPOs] = useState([]);
+    const [todayDateStr, setTodayDateStr] = useState('');
+    const [todayDayStr, setTodayDayStr] = useState('');
 
-    // Permission check
     const roles = userData?.roles || [];
     const hasAccess = isAdmin || roles.includes(type);
 
     useEffect(() => {
-        if (hasAccess) {
-            loadForm();
-            // Load pending/partial POs to allow linking
-            getPurchaseOrders().then(pos => setOpenPOs(pos.filter(p => p.status !== 'received')));
+        if (hasAccess && currentCompanyId) {
+            loadInitialData();
+            const now = new Date();
+            setTodayDateStr(now.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }));
+            setTodayDayStr(now.toLocaleDateString('en-US', { weekday: 'long' }));
         }
-    }, [type, hasAccess]);
+    }, [type, hasAccess, currentCompanyId]);
 
-    const loadForm = async () => {
+    const loadInitialData = async () => {
         setLoading(true);
         try {
-            const config = await getFormConfig(type);
+            const [config, entriesData, pos] = await Promise.all([
+                getFormConfig(currentCompanyId, type),
+                getLogisticsEntries(currentCompanyId, type),
+                getPurchaseOrders(currentCompanyId)
+            ]);
+
             setFields(config);
-            // Initialize empty form state
-            const initial = {};
-            config.forEach(f => initial[f.id] = '');
-            setFormData(initial);
+            setAllEntries(entriesData);
+            setOpenPOs(pos.filter(p => p.status !== 'received'));
+
+            // Initial Fixed Data
+            const now = new Date();
+            setFormData({
+                lr_number: '',
+                date: now.toISOString().split('T')[0],
+                time: now.toTimeString().split(' ')[0].substring(0, 5),
+                vendor_name: '',
+                transport_company: '',
+                location: '',
+                linkedPoId: '',
+                opened: false
+            });
+
+            const initialDynamic = {};
+            config.forEach(f => {
+                const fixedIds = ['lr_number', 'date', 'time', 'vendor_name', 'transport_company', 'location'];
+                if (!fixedIds.includes(f.id)) initialDynamic[f.id] = '';
+            });
+            setDynamicData(initialDynamic);
+
         } catch (err) {
-            console.error('Failed to load form', err);
+            console.error('Failed to load initial data', err);
         } finally {
             setLoading(false);
         }
     };
 
+    const addLot = () => setLots([...lots, { id: Date.now() + Math.random(), lot_size: '', isShort: false, backlogQty: '', lotVendor: '', showVendor: false }]);
+    const removeLot = (id) => lots.length > 1 && setLots(lots.filter(l => l.id !== id));
+    const updateLot = (id, updates) => setLots(lots.map(l => l.id === id ? { ...l, ...updates } : l));
+
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (submitting) return;
         setSubmitting(true);
         try {
-            // Trim inputs and convert numbers where appropriate
-            const cleanedData = {};
-            fields.forEach(f => {
-                let val = formData[f.id];
-                if (typeof val === 'string') val = val.trim();
-                if (f.type === 'number' && val !== '') val = Number(val);
-                cleanedData[f.id] = val;
-            });
-
-            // Auto capture user info
-            cleanedData.submittedBy = currentUser.uid;
-            cleanedData.submittedByName = userData.displayName || currentUser.displayName || 'Employee';
-
-            // Ensure extremely strict LR matching logic (convert to string & lowercase)
-            if (cleanedData.lr_number) {
-                cleanedData.lr_number = String(cleanedData.lr_number).trim().toLowerCase();
-            }
-
-            await addLogisticsEntry(type, cleanedData).then(async (docRef) => {
-                // If a PO was linked, update its status
-                if (linkedPoId && docRef?.id) {
-                    await linkEntryToPurchaseOrder(linkedPoId, type, docRef.id);
-                }
-            });
-
-            alert(`${title} Entry Saved Successfully!${linkedPoId ? ' Purchase Order status updated.' : ''}`);
-
-            // Reset
-            const initial = {};
-            fields.forEach(f => initial[f.id] = '');
-            setFormData(initial);
-            setLinkedPoId('');
-
-        } catch (err) {
-            console.error(err);
-            alert("Error saving record: " + err.message);
-        } finally {
-            setSubmitting(false);
-        }
+            const isPending = type === 'transport' && lots.some(l => l.isShort);
+            const entryData = {
+                ...formData, ...dynamicData, type, status: isPending ? 'pending' : 'resolved',
+                submittedBy: currentUser?.uid || 'guest', submittedByName: userData?.displayName || 'Guest',
+                createdAt: new Date().toISOString()
+            };
+            if (type === 'transport') entryData.lots = lots.map(({ id, showVendor, ...rest }) => rest);
+            const docRef = await addLogisticsEntry(currentCompanyId, type, entryData);
+            if (formData.linkedPoId && docRef?.id) await linkEntryToPurchaseOrder(currentCompanyId, formData.linkedPoId, type, docRef.id);
+            alert(`${title} Recorded!`);
+            loadInitialData();
+            setLots([{ id: Date.now(), lot_size: '', isShort: false, backlogQty: '', lotVendor: '', showVendor: false }]);
+        } catch (err) { console.error(err); alert("Error: " + err.message); }
+        finally { setSubmitting(false); }
     };
 
-    if (!currentUser) return <div className="container" style={{ padding: 'var(--spacing-xl) 0', textAlign: 'center' }}><p>Please log in.</p></div>;
+    const handleReconcile = async (entry) => {
+        if (!isAdmin || !window.confirm("Resolve backlog?")) return;
+        try {
+            await updateLogisticsEntry(currentCompanyId, type, entry.id, { status: 'resolved', reconciledAt: new Date().toISOString() });
+            loadInitialData();
+        } catch (err) { console.error(err); }
+    };
 
-    if (!hasAccess) {
-        return (
-            <div className="container" style={{ padding: 'var(--spacing-xl) 0', textAlign: 'center' }}>
-                <h2 style={{ color: 'red' }}>Access Denied</h2>
-                <p>You do not have the required permission to access the {title} portal. Contact an Administrator to request access.</p>
-            </div>
-        );
-    }
+    if (!currentUser) return <div className="container" style={{ padding: '2rem', textAlign: 'center' }}><p>Please log in.</p></div>;
+    if (!hasAccess) return <div className="container" style={{ padding: '2rem', textAlign: 'center' }}><h2 style={{ color: 'red' }}>Access Denied</h2></div>;
+    if (loading) return <div className="container" style={{ padding: '2rem' }}><p>Loading...</p></div>;
 
-    if (loading) return <div className="container" style={{ padding: 'var(--spacing-xl) 0' }}><p>Loading secure entry portal...</p></div>;
-
-    if (fields.length === 0) {
-        return (
-            <div className="container" style={{ padding: 'var(--spacing-xl) 0', textAlign: 'center' }}>
-                <h2>Portal Not Configured</h2>
-                <p>The Administrator has not yet configured the fields for the {title} portal.</p>
-            </div>
-        );
-    }
-
-    const Icon = type === 'transport' ? Truck : FileText;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const filteredEntries = activeTab === 'ledger' 
+        ? allEntries.filter(e => e.createdAt && e.createdAt.startsWith(todayStr))
+        : allEntries.filter(e => e.status === 'pending');
 
     return (
-        <div className="container" style={{ padding: 'var(--spacing-xl) 0', maxWidth: '800px' }}>
-            <div className="card">
-                <div className="stack-on-mobile" style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: 'var(--spacing-lg)', borderBottom: '2px solid var(--color-border)', paddingBottom: '1rem' }}>
-                    <div style={{ background: 'var(--color-primary)', padding: '0.75rem', borderRadius: '50%', color: 'white', display: 'flex' }}>
-                        <Icon size={28} />
+        <div className="container" style={{ padding: '0.25rem 0' }}>
+            {/* Theme Style Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '0.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ background: 'var(--color-accent-blue)', color: 'white', padding: '0.4rem', borderRadius: '4px' }}>
+                        {type === 'transport' ? <Truck size={18} /> : <FileText size={18} />}
                     </div>
                     <div>
-                        <h2 style={{ color: 'var(--color-accent-blue)', margin: 0 }}>{title} Portal</h2>
-                        <p style={{ margin: 0, fontSize: '0.9rem', color: 'gray' }}>Fill out the verified logistics details</p>
+                        <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--color-accent-blue)' }}>{title}</h2>
+                        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '2px' }}>
+                            <button onClick={() => setActiveTab('ledger')} className={`portal-tab ${activeTab === 'ledger' ? 'active' : ''}`} style={{ fontSize: '0.7rem', padding: '1px 6px' }}>Ledger</button>
+                            <button onClick={() => setActiveTab('pending')} className={`portal-tab ${activeTab === 'pending' ? 'active' : ''}`} style={{ fontSize: '0.7rem', padding: '1px 6px' }}>
+                                Pending {allEntries.filter(e => e.status === 'pending').length > 0 && <span style={{ background: 'var(--color-accent-orange)', color: 'white', padding: '0px 4px', borderRadius: '4px', marginLeft: '2px' }}>{allEntries.filter(e => e.status === 'pending').length}</span>}
+                            </button>
+                        </div>
                     </div>
                 </div>
+                <div style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--color-text-light)' }}>
+                    <strong>{todayDayStr}</strong>, {todayDateStr}
+                </div>
+            </div>
 
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-                    {fields.map(field => (
-                        <div key={field.id} className="input-group">
-                            <label style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>
-                                {field.label} {field.required && <span style={{ color: 'red' }}>*</span>}
-                                {field.id.includes('lr_number') && <span style={{ color: 'gray', fontWeight: 'normal', fontStyle: 'italic', marginLeft: '0.5rem' }}>(Used for system matching)</span>}
-                            </label>
+            {/* Rearranged & Themed Excel Form */}
+            {activeTab === 'ledger' && (
+                <div className="saas-excel-container">
+                    <form onSubmit={handleSubmit}>
+                        <div className="saas-form-row-scroll">
+                            {/* Header Row - Arranged: LR# | Transport | Vendor | Location | Date/Time | Action */}
+                            <div className="saas-excel-header">
+                                <div className="saas-excel-label excel-column-lr">LR Number</div>
+                                <div className="saas-excel-label excel-column-flexible">Transport Co</div>
+                                <div className="saas-excel-label excel-column-flexible">Vendor / Supplier</div>
+                                <div className="saas-excel-label excel-column-location">Location</div>
+                                <div className="saas-excel-label excel-column-datetime">Date & Time</div>
+                                <div className="saas-excel-label excel-column-action" style={{ borderRight: 'none', textAlign: 'center' }}>Save</div>
+                            </div>
 
-                            {field.type === 'textarea' ? (
-                                <textarea
-                                    className="input-field"
-                                    required={field.required}
-                                    value={formData[field.id]}
-                                    onChange={e => setFormData({ ...formData, [field.id]: e.target.value })}
-                                    rows="3"
-                                />
-                            ) : (
-                                <input
-                                    type={field.type}
-                                    className="input-field"
-                                    required={field.required}
-                                    value={formData[field.id]}
-                                    onChange={e => setFormData({ ...formData, [field.id]: e.target.value })}
-                                    step={field.type === 'number' ? 'any' : undefined}
-                                />
+                            {/* Main Entry Row */}
+                            <div className="saas-excel-data-row">
+                                <div className="saas-excel-cell excel-column-lr">
+                                    <input required className="saas-input-box" placeholder="LR#" value={formData.lr_number} onChange={e => setFormData({...formData, lr_number: e.target.value})} />
+                                </div>
+                                <div className="saas-excel-cell excel-column-flexible">
+                                    <GenericAutocomplete 
+                                        placeholder="Transport Search..." 
+                                        fetchData={() => getTransports(currentCompanyId)} 
+                                        iconType="truck"
+                                        value={formData.transport_company} onChange={v => setFormData({...formData, transport_company: v})}
+                                        onSelect={t => setFormData({...formData, transport_company: t.name})}
+                                    />
+                                </div>
+                                <div className="saas-excel-cell excel-column-flexible">
+                                    <GenericAutocomplete 
+                                        placeholder="Vendor Search..." 
+                                        fetchData={() => getSuppliers(currentCompanyId)} 
+                                        iconType="vendor"
+                                        value={formData.vendor_name} onChange={v => setFormData({...formData, vendor_name: v})}
+                                        onSelect={s => setFormData({...formData, vendor_name: s.name, location: s.address || formData.location})}
+                                    />
+                                </div>
+                                <div className="saas-excel-cell excel-column-location">
+                                    <input className="saas-input-box" placeholder="Auto-filled..." value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} />
+                                </div>
+                                <div className="saas-excel-cell excel-column-datetime">
+                                    <div style={{ display: 'flex', gap: '2px', width: '100%' }}>
+                                        <input type="date" required className="saas-input-box" style={{ flex: 1.5, fontSize: '0.7rem' }} value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
+                                        <input type="time" required className="saas-input-box" style={{ flex: 1, fontSize: '0.7rem' }} value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div className="saas-excel-cell excel-column-action" style={{ borderRight: 'none', justifyContent: 'center', gap: '8px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                        <span style={{ fontSize: '0.5rem', fontWeight: 'bold', color: formData.opened ? 'var(--color-accent-orange)' : '#94a3b8' }}>OPENED?</span>
+                                        <input type="checkbox" checked={formData.opened} onChange={e => setFormData({ ...formData, opened: e.target.checked })} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                                    </div>
+                                    <button type="submit" className="btn btn-primary" style={{ height: '32px', width: '32px', padding: 0, background: 'var(--color-accent-blue)', border: 'none' }} disabled={submitting}>
+                                        <Save size={14} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Dynamic Fields Section (Compact) */}
+                            {Object.keys(dynamicData).length > 0 && (
+                                <div style={{ display: 'flex', background: '#fcfcfc', padding: '6px 12px', borderBottom: '1px solid var(--color-border)', minWidth: '900px', flexWrap: 'wrap', gap: '1rem' }}>
+                                    {fields.map(f => {
+                                        const fixedIds = ['lr_number', 'date', 'time', 'vendor_name', 'transport_company', 'location'];
+                                        if (fixedIds.includes(f.id)) return null;
+                                        return (
+                                            <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <span className="saas-lot-label-tiny">{f.label.toUpperCase()}:</span>
+                                                <input required={f.required} type={f.type} className="saas-input-box" style={{ width: '100px', height: '26px' }} value={dynamicData[f.id]} onChange={e => setDynamicData({...dynamicData, [f.id]: e.target.value})} />
+                                            </div>
+                                        );
+                                    })}
+                                    {openPOs.length > 0 && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <span className="saas-lot-label-tiny">PO LINK:</span>
+                                            <select className="saas-input-box" style={{ width: '120px', height: '26px' }} value={formData.linkedPoId} onChange={e => setFormData({...formData, linkedPoId: e.target.value})}>
+                                                <option value="">—</option>
+                                                {openPOs.map(po => <option key={po.id} value={po.id}>{po.poNumber}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Lot Spreadsheet - Arranged Rows */}
+                            {type === 'transport' && (
+                                <div style={{ background: '#fff' }}>
+                                    <div style={{ padding: '4px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f4f5f7', borderBottom: '1px solid var(--color-border)' }}>
+                                        <span style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--color-accent-blue)', letterSpacing: '0.05em' }}>LOT DETAILS</span>
+                                        <button type="button" onClick={addLot} className="btn btn-outline" style={{ padding: '0 8px', fontSize: '0.65rem', height: '20px' }}>+ New Row</button>
+                                    </div>
+                                    {lots.map(lot => (
+                                        <div key={lot.id} className="saas-lot-row">
+                                            <div style={{ width: '120px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span className="saas-lot-label-tiny">SIZE:</span>
+                                                <input required className="saas-input-box" style={{ height: '26px' }} value={lot.lot_size} onChange={e => updateLot(lot.id, { lot_size: e.target.value })} />
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input type="checkbox" checked={lot.isShort} onChange={e => updateLot(lot.id, { isShort: e.target.checked })} />
+                                                <span style={{ fontSize: '0.65rem', fontWeight: 600, color: lot.isShort ? 'var(--color-accent-orange)' : 'inherit' }}>SHORT?</span>
+                                            </div>
+                                            <div style={{ width: '120px' }}>
+                                                {lot.isShort && <input required placeholder="Short Qty" className="saas-input-box" style={{ height: '26px', borderColor: 'var(--color-accent-orange)' }} value={lot.backlogQty} onChange={e => updateLot(lot.id, { backlogQty: e.target.value })} />}
+                                            </div>
+                                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <input type="checkbox" style={{ width: '14px', height: '14px' }} checked={lot.showVendor} onChange={e => updateLot(lot.id, { showVendor: e.target.checked })} />
+                                                    <span style={{ fontSize: '0.65rem', fontWeight: 700 }}>OTHER VENDOR?</span>
+                                                </div>
+                                                {lot.showVendor && (
+                                                    <div style={{ flex: 1 }}>
+                                                        <GenericAutocomplete 
+                                                            placeholder="Override supplier..." 
+                                                            fetchData={() => getSuppliers(currentCompanyId)}
+                                                            value={lot.lotVendor} onChange={v => updateLot(lot.id, { lotVendor: v })}
+                                                            onSelect={s => updateLot(lot.id, { lotVendor: s.name })}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <button type="button" onClick={() => removeLot(lot.id)} style={{ border: 'none', background: 'none', color: '#888', cursor: 'pointer' }} disabled={lots.length === 1}><Trash2 size={14} /></button>
+                                        </div>
+                                    ))}
+                                </div>
                             )}
                         </div>
-                    ))}
+                    </form>
+                </div>
+            )}
 
-                    {/* Optional PO Linker */}
-                    {openPOs.length > 0 && (
-                        <div className="input-group">
-                            <label style={{ fontSize: '0.9rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <Link2 size={16} color="var(--color-accent-blue)" />
-                                Link to a Purchase Order <span style={{ color: 'gray', fontWeight: 'normal', fontSize: '0.8rem' }}>(optional — marks PO as partially/fully received)</span>
-                            </label>
-                            <select className="input-field" value={linkedPoId} onChange={e => setLinkedPoId(e.target.value)}>
-                                <option value="">— Not linked to any PO —</option>
-                                {openPOs.map(po => (
-                                    <option key={po.id} value={po.id}>
-                                        {po.poNumber} · {po.productName} · {po.supplierName}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    <button
-                        type="submit"
-                        className="btn btn-primary"
-                        disabled={submitting}
-                        style={{ padding: '0.75rem', fontSize: '1.1rem', marginTop: 'var(--spacing-md)' }}
-                    >
-                        {submitting ? 'Authenticating & Saving...' : `Submit ${title} Record`}
-                    </button>
-                </form>
+            {/* Ledger Table (Below) */}
+            <div className="saas-ledger-card">
+                <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid var(--color-border)', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0, color: 'var(--color-accent-blue)' }}>
+                        {activeTab === 'ledger' ? "Today's Entries" : "Backlog Tracking"}
+                    </h3>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>{filteredEntries.length} items</div>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                    <table className="daily-entries-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                            <tr>
+                                <th className="saas-table-header">LR#</th>
+                                <th className="saas-table-header">Vendor / Transport</th>
+                                <th className="saas-table-header">Details</th>
+                                <th className="saas-table-header">Status</th>
+                                <th className="saas-table-header" style={{ textAlign: 'right' }}>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredEntries.length === 0 ? (
+                                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: '#999', fontStyle: 'italic' }}>No records found.</td></tr>
+                            ) : (
+                                filteredEntries.map(entry => (
+                                    <tr key={entry.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                                        <td style={{ padding: '0.5rem 1rem', fontWeight: '700' }}>{entry.lr_number}</td>
+                                        <td style={{ padding: '0.5rem 1rem' }}>
+                                            <div style={{ fontWeight: '600' }}>{entry.vendor_name}</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#888' }}>{entry.transport_company}</div>
+                                        </td>
+                                        <td style={{ padding: '0.5rem 1rem' }}>
+                                            {entry.lots?.map((l, i) => (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}>
+                                                    <span>{l.lot_size}</span>
+                                                    {l.isShort && <span style={{ color: 'var(--color-accent-orange)', fontWeight: 600 }}>({l.backlogQty} shortfall)</span>}
+                                                    {l.lotVendor && <span style={{ color: '#888', fontStyle: 'italic' }}> - {l.lotVendor}</span>}
+                                                </div>
+                                            ))}
+                                        </td>
+                                        <td style={{ padding: '0.5rem 1rem' }}>
+                                            <div className={entry.status === 'pending' ? 'table-pending-status' : 'table-resolved-status'} style={{ padding: '1px 6px', fontSize: '0.6rem', borderRadius: '4px' }}>
+                                                {entry.status === 'pending' ? 'PENDING' : 'OK'}
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '0.5rem 1rem', textAlign: 'right' }}>
+                                            {isAdmin && entry.status === 'pending' && (
+                                                <button className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.65rem', background: 'var(--color-accent-blue)', border: 'none' }} onClick={() => handleReconcile(entry)}>Resolve</button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     );

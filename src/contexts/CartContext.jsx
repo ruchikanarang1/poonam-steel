@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import { useAuth } from './AuthContext';
 
 const CartContext = createContext();
 
@@ -7,7 +8,13 @@ export function useCart() {
 }
 
 export function CartProvider({ children }) {
+    const { currentCompanyId } = useAuth();
     const [cartItems, setCartItems] = useState([]);
+
+    // Clear cart on company switch to avoid crossing orders
+    React.useEffect(() => {
+        setCartItems([]);
+    }, [currentCompanyId]);
 
     const addToCart = (product, quantity) => {
         setCartItems(prev => {

@@ -1,24 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { getUsers, updateUserRoles, getUserByEmail } from '../../lib/db';
+import { 
+    getCompanyEmployees, updateCompanyEmployeeRoles, 
+    addCompanyEmployee, getUserByEmail 
+} from '../../lib/db';
+import { useAuth } from '../../contexts/AuthContext';
 import { Shield, Truck, FileText, Search, PlusCircle, ShoppingBag, TicketCheck } from 'lucide-react';
 
 export default function TeamManagement() {
+    const { currentCompanyId } = useAuth();
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchEmail, setSearchEmail] = useState('');
     const [searching, setSearching] = useState(false);
 
     useEffect(() => {
-        fetchEmployees();
-    }, []);
+        if (currentCompanyId) fetchEmployees();
+    }, [currentCompanyId]);
 
     const fetchEmployees = async () => {
         setLoading(true);
         try {
-            const allUsers = await getUsers();
-            // Filter out regular users to keep the list completely clean
-            const employeeUsers = allUsers.filter(u => u.role === 'admin' || (u.roles && u.roles.length > 0) || u.isEmployeeCandidate);
-            setEmployees(employeeUsers);
+            const companyUsers = await getCompanyEmployees(currentCompanyId);
+            setEmployees(companyUsers);
         } catch (err) {
             console.error('Failed to fetch users:', err);
         } finally {
@@ -47,10 +50,12 @@ export default function TeamManagement() {
                 return;
             }
 
-            // Temporarily add them to the UI as a candidate so the admin can assign roles
-            setEmployees([...employees, { ...user, isEmployeeCandidate: true, roles: user.roles || [] }]);
+            // Add them to the company in the database
+            await addCompanyEmployee(currentCompanyId, user.id);
+            
             setSearchEmail('');
-            alert("User found! They have been added to the table below. Please check the boxes to assign them their portal permissions.");
+            alert("User found and added to the company! They have been added to the table below. Please check the boxes to assign them their portal permissions.");
+            fetchEmployees();
 
         } catch (err) {
             console.error('Failed to find user', err);
@@ -69,7 +74,7 @@ export default function TeamManagement() {
         }
 
         try {
-            await updateUserRoles(userId, newRoles);
+            await updateCompanyEmployeeRoles(currentCompanyId, userId, newRoles);
             // Updating local state instantly
             setEmployees(employees.map(u => u.id === userId ? { ...u, roles: newRoles } : u));
         } catch (err) {

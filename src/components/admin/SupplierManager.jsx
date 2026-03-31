@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { getSuppliers, saveSupplier, deleteSupplier } from '../../lib/db';
+import { useAuth } from '../../contexts/AuthContext';
 import { Plus, Trash2, Edit2, Check, X } from 'lucide-react';
 
 export default function SupplierManager() {
+    const { currentCompanyId } = useAuth();
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [form, setForm] = useState({ name: '', phone: '', address: '', gst: '' });
+    const [form, setForm] = useState({ name: '', phone: '', address: '', gst: '', brands: '' });
     const [editingId, setEditingId] = useState(null);
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => { 
+        if (currentCompanyId) load(); 
+    }, [currentCompanyId]);
 
     const load = async () => {
         setLoading(true);
-        try { setSuppliers(await getSuppliers()); }
+        try { setSuppliers(await getSuppliers(currentCompanyId)); }
         catch (err) { console.error(err); }
         finally { setLoading(false); }
     };
@@ -23,8 +27,12 @@ export default function SupplierManager() {
         if (!form.name.trim() || !form.phone.trim()) return;
         setSaving(true);
         try {
-            await saveSupplier(editingId, form);
-            setForm({ name: '', phone: '', address: '', gst: '' });
+            const dataToSave = { 
+                ...form, 
+                brands: form.brands.split(',').map(b => b.trim()).filter(b => b) 
+            };
+            await saveSupplier(currentCompanyId, editingId, dataToSave);
+            setForm({ name: '', phone: '', address: '', gst: '', brands: '' });
             setEditingId(null);
             await load();
         } catch (err) { alert('Failed to save'); }
@@ -33,14 +41,20 @@ export default function SupplierManager() {
 
     const startEdit = (s) => {
         setEditingId(s.id);
-        setForm({ name: s.name, phone: s.phone, address: s.address || '', gst: s.gst || '' });
+        setForm({ 
+            name: s.name, 
+            phone: s.phone, 
+            address: s.address || '', 
+            gst: s.gst || '',
+            brands: s.brands ? s.brands.join(', ') : ''
+        });
     };
 
-    const cancelEdit = () => { setEditingId(null); setForm({ name: '', phone: '', address: '', gst: '' }); };
+    const cancelEdit = () => { setEditingId(null); setForm({ name: '', phone: '', address: '', gst: '', brands: '' }); };
 
     const handleDelete = async (id) => {
         if (!window.confirm('Remove this supplier?')) return;
-        await deleteSupplier(id);
+        await deleteSupplier(currentCompanyId, id);
         setSuppliers(suppliers.filter(s => s.id !== id));
     };
 
@@ -69,9 +83,9 @@ export default function SupplierManager() {
                         <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '0.25rem' }}>Address</label>
                         <input className="input-field" placeholder="City, State" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
                     </div>
-                    <div>
-                        <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '0.25rem' }}>GST Number</label>
-                        <input className="input-field" placeholder="27XXXXX..." value={form.gst} onChange={e => setForm({ ...form, gst: e.target.value })} />
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '0.25rem' }}>Associated Brands (Comma separated)</label>
+                        <input className="input-field" placeholder="e.g. TATA, JSW, Vizag Steel" value={form.brands} onChange={e => setForm({ ...form, brands: e.target.value })} />
                     </div>
                     <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.75rem' }}>
                         <button type="submit" className="btn btn-primary" disabled={saving} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
@@ -103,12 +117,19 @@ export default function SupplierManager() {
                     )}
                     {suppliers.map(s => (
                         <tr key={s.id} style={{ borderBottom: '1px solid #f1f3f5' }}>
-                            <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600' }}>{s.name}</td>
+                            <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600' }}>
+                                {s.name}
+                                {s.brands && s.brands.length > 0 && (
+                                    <div style={{ fontSize: '0.65rem', color: 'var(--color-accent-orange)', textTransform: 'uppercase', marginTop: '2px' }}>
+                                        🏷️ {s.brands.join(', ')}
+                                    </div>
+                                )}
+                            </td>
                             <td style={{ padding: '0.75rem 0.5rem' }}>{s.phone}</td>
                             <td style={{ padding: '0.75rem 0.5rem', color: 'gray', fontSize: '0.9rem' }}>{s.address || '—'}</td>
                             <td style={{ padding: '0.75rem 0.5rem', color: 'gray', fontSize: '0.85rem' }}><code>{s.gst || '—'}</code></td>
                             <td style={{ padding: '0.75rem 0.5rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                                <button onClick={() => startEdit(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }}><Edit2 size={16} /></button>
+                                <button onClick={() => startEdit(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent-blue)' }}><Edit2 size={16} /></button>
                                 <button onClick={() => handleDelete(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ff4444' }}><Trash2 size={16} /></button>
                             </td>
                         </tr>

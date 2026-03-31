@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getTickets, getPurchaseOrders, getOrders } from '../../lib/db';
+import { useAuth } from '../../contexts/AuthContext';
 import { Clock, PackageSearch, ShoppingCart, TicketCheck, Truck, FileText, Bell, RefreshCw } from 'lucide-react';
 import OrgUpdates from '../OrgUpdates';
 
@@ -41,17 +42,22 @@ function StatCard({ icon, title, count, color, to, description }) {
 }
 
 export default function AdminHome() {
+    const { currentCompanyId } = useAuth();
     const [stats, setStats] = useState({ pendingTickets: 0, pendingOrders: 0, partialOrders: 0, pendingCustomerOrders: 0 });
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(null);
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => { 
+        if (currentCompanyId) load(); 
+    }, [currentCompanyId]);
 
     const load = async () => {
         setLoading(true);
         try {
             const [tickets, pos, customerOrders] = await Promise.all([
-                getTickets(), getPurchaseOrders(), getOrders()
+                getTickets(currentCompanyId), 
+                getPurchaseOrders(currentCompanyId), 
+                getOrders(currentCompanyId)
             ]);
             setStats({
                 pendingTickets: tickets.filter(t => t.status === 'pending').length,

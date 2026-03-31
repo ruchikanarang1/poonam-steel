@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getTickets, updateTicketStatus } from '../../lib/db';
+import { useAuth } from '../../contexts/AuthContext';
 import { CheckCircle2, XCircle, Clock, CheckSquare, Square } from 'lucide-react';
 
 const statusColors = {
@@ -9,16 +10,19 @@ const statusColors = {
 };
 
 export default function TicketReviews() {
+    const { currentCompanyId } = useAuth();
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('pending');
 
-    useEffect(() => { loadTickets(); }, []);
+    useEffect(() => { 
+        if (currentCompanyId) loadTickets(); 
+    }, [currentCompanyId]);
 
     const loadTickets = async () => {
         setLoading(true);
         try {
-            const data = await getTickets();
+            const data = await getTickets(currentCompanyId);
             // Sort newest first
             data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             setTickets(data);
@@ -31,21 +35,21 @@ export default function TicketReviews() {
 
     const handleApprove = async (id) => {
         try {
-            await updateTicketStatus(id, { status: 'approved', reviewedAt: new Date().toISOString() });
+            await updateTicketStatus(currentCompanyId, id, { status: 'approved', reviewedAt: new Date().toISOString() });
             setTickets(tickets.map(t => t.id === id ? { ...t, status: 'approved' } : t));
         } catch (err) { alert('Failed to update'); }
     };
 
     const handleReject = async (id) => {
         try {
-            await updateTicketStatus(id, { status: 'rejected', reviewedAt: new Date().toISOString() });
+            await updateTicketStatus(currentCompanyId, id, { status: 'rejected', reviewedAt: new Date().toISOString() });
             setTickets(tickets.map(t => t.id === id ? { ...t, status: 'rejected' } : t));
         } catch (err) { alert('Failed to update'); }
     };
 
     const handleReconcile = async (id, current) => {
         try {
-            await updateTicketStatus(id, { reconciled: !current });
+            await updateTicketStatus(currentCompanyId, id, { reconciled: !current });
             setTickets(tickets.map(t => t.id === id ? { ...t, reconciled: !current } : t));
         } catch (err) { alert('Failed to update'); }
     };

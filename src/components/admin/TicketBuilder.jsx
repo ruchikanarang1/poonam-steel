@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { getTicketCategories, saveTicketCategory, deleteTicketCategory } from '../../lib/db';
+import { useAuth } from '../../contexts/AuthContext';
 import { Plus, Trash2, Save, GripVertical, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
 
 export default function TicketBuilder() {
+    const { currentCompanyId } = useAuth();
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeCategory, setActiveCategory] = useState(null); // id of the category being edited
@@ -13,13 +15,13 @@ export default function TicketBuilder() {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        loadCategories();
-    }, []);
+        if (currentCompanyId) loadCategories();
+    }, [currentCompanyId]);
 
     const loadCategories = async () => {
         setLoading(true);
         try {
-            const data = await getTicketCategories();
+            const data = await getTicketCategories(currentCompanyId);
             setCategories(data);
         } catch (err) {
             console.error(err);
@@ -42,7 +44,7 @@ export default function TicketBuilder() {
         e.preventDefault();
         if (!newCategoryName.trim()) return;
         try {
-            await saveTicketCategory(null, { name: newCategoryName.trim(), fields: [] });
+            await saveTicketCategory(currentCompanyId, null, { name: newCategoryName.trim(), fields: [] });
             setNewCategoryName('');
             await loadCategories();
         } catch (err) {
@@ -54,7 +56,7 @@ export default function TicketBuilder() {
         if (!activeCategory) return;
         setSaving(true);
         try {
-            await saveTicketCategory(activeCategory, { fields: editingFields });
+            await saveTicketCategory(currentCompanyId, activeCategory, { fields: editingFields });
             // Update local state
             setCategories(categories.map(c => c.id === activeCategory ? { ...c, fields: editingFields } : c));
             alert('Fields saved!');
@@ -68,7 +70,7 @@ export default function TicketBuilder() {
     const handleDeleteCategory = async (id) => {
         if (!window.confirm('Delete this category? All tickets with this category will lose their category label.')) return;
         try {
-            await deleteTicketCategory(id);
+            await deleteTicketCategory(currentCompanyId, id);
             if (activeCategory === id) { setActiveCategory(null); setEditingFields([]); }
             setCategories(categories.filter(c => c.id !== id));
         } catch (err) {

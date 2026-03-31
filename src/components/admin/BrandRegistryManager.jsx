@@ -1,0 +1,208 @@
+import React, { useState, useEffect } from 'react';
+import { 
+    getVendorBrandRegistry, saveVendorBrandEntry, deleteVendorBrandEntry, 
+    getSuppliers, getFormConfig 
+} from '../../lib/db';
+import { useAuth } from '../../contexts/AuthContext';
+import { Plus, Trash2, Edit2, Check, X, Save, Database, History, Search, RefreshCw } from 'lucide-react';
+import GenericAutocomplete from '../GenericAutocomplete';
+
+export default function BrandRegistryManager() {
+    const { currentCompanyId } = useAuth();
+    const [registry, setRegistry] = useState([]);
+    const [suppliers, setSuppliers] = useState([]);
+    const [fields, setFields] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    
+    // Form and Registry UI State
+    const [formData, setFormData] = useState({ vendorName: '', brandName: '', productName: '' });
+    const [dynamicData, setDynamicData] = useState({});
+    const [editingId, setEditingId] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+
+    useEffect(() => { 
+        if (currentCompanyId) load(); 
+    }, [currentCompanyId]);
+
+    const load = async () => {
+        setLoading(true);
+        try {
+            const [regData, sups, config] = await Promise.all([
+                getVendorBrandRegistry(currentCompanyId),
+                getSuppliers(currentCompanyId),
+                getFormConfig(currentCompanyId, 'vendor_brand_registry')
+            ]);
+            setRegistry(regData);
+            setSuppliers(sups);
+            setFields(config);
+            
+            // Initialize dynamic fields
+            const initialDynamic = {};
+            config.forEach(f => initialDynamic[f.id] = '');
+            setDynamicData(initialDynamic);
+        } catch (err) { console.error(err); }
+        finally { setLoading(false); }
+    };
+
+    const handleSave = async (e) => {
+        e.preventDefault();
+        if (!formData.vendorName || !formData.brandName) return;
+        setSaving(true);
+        try {
+            const dataToSave = { ...formData, ...dynamicData };
+            await saveVendorBrandEntry(currentCompanyId, editingId, dataToSave);
+            alert("Registry Entry Saved!");
+            
+            // Re-sync basic suppliers' brands array (optional but helpful)
+            // find supplier and ensure brand is added to their brands list
+            
+            setEditingId(null);
+            setFormData({ vendorName: '', brandName: '', productName: '' });
+            const initialDynamic = {};
+            fields.forEach(f => initialDynamic[f.id] = '');
+            setDynamicData(initialDynamic);
+            await load();
+        } catch (err) { alert('Failed to save'); }
+        finally { setSaving(false); }
+    };
+
+    const handleSync = async () => {
+        if (!window.confirm("Sync all existing Supplier Brands into the Registry?")) return;
+        setSaving(true);
+        try {
+            let count = 0;
+            for (const s of suppliers) {
+                if (s.brands && Array.isArray(s.brands)) {
+                    for (const brand of s.brands) {
+                        const exists = registry.find(r => r.vendorName === s.name && r.brandName === brand);
+                        if (!exists) {
+                            await saveVendorBrandEntry(currentCompanyId, null, { vendorName: s.name, brandName: brand });
+                            count++;
+                        }
+                    }
+                }
+            }
+            alert(`Sync Complete! Imported ${count} brand associations.`);
+            await load();
+        } catch (err) { alert("Sync failed"); }
+        finally { setSaving(false); }
+    };
+
+    const startEdit = (entry) => {
+        setEditingId(entry.id);
+        setFormData({ vendorName: entry.vendorName, brandName: entry.brandName, productName: entry.productName || '' });
+        const dyn = {};
+        fields.forEach(f => dyn[f.id] = entry[f.id] || '');
+        setDynamicData(dyn);
+    };
+
+    const handleDelete = async (id) => {
+        if (!window.confirm('Remove this brand association?')) return;
+        await deleteVendorBrandEntry(currentCompanyId, id);
+        setRegistry(registry.filter(r => r.id !== id));
+    };
+
+    const filteredRegistry = registry.filter(r => 
+        r.vendorName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        r.brandName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (r.productName && r.productName.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    if (loading) return <p>Loading Brand Registry...</p>;
+
+    return (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid #eee', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <h3 style={{ color: 'var(--color-accent-blue)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Database size={20} /> Vendor-Brand Registry
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#64748b' }}>Define which vendors sell which brands and add custom metadata.</p>
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button onClick={handleSync} disabled={saving} className="btn btn-outline" style={{ fontSize: '0.75rem', display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <RefreshCw size={14} className={saving ? 'spin' : ''} /> Sync From Suppliers
+                    </button>
+                    <div style={{ position: 'relative' }}>
+                        <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                        <input className="saas-input-box" style={{ width: '250px', paddingLeft: '32px' }} placeholder="Search vendor or brand..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    </div>
+                </div>
+            </div>
+
+            {/* Excel Entry Row */}
+            <div style={{ background: '#fff', borderBottom: '1px solid #eee' }}>
+                <form onSubmit={handleSave} className="saas-excel-data-row" style={{ minWidth: '100%', padding: '10px 1.5rem', background: '#fcfcfc' }}>
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end', width: '100%' }}>
+                        <div style={{ width: '220px' }}>
+                            <span className="saas-lot-label-tiny">VENDOR / SUPPLIER</span>
+                            <GenericAutocomplete 
+                                placeholder="Search supplier..." 
+                                fetchData={() => getSuppliers(currentCompanyId)} 
+                                iconType="vendor"
+                                value={formData.vendorName} onChange={v => setFormData({ ...formData, vendorName: v })}
+                                onSelect={s => setFormData({ ...formData, vendorName: s.name })}
+                            />
+                        </div>
+                        <div style={{ width: '180px' }}>
+                            <span className="saas-lot-label-tiny">BRAND</span>
+                            <input className="saas-input-box" required placeholder="e.g. TATA" value={formData.brandName} onChange={e => setFormData({ ...formData, brandName: e.target.value })} />
+                        </div>
+                        <div style={{ width: '180px' }}>
+                            <span className="saas-lot-label-tiny">PRODUCT / ITEM NAME</span>
+                            <input className="saas-input-box" required placeholder="e.g. 10mm BRY" value={formData.productName} onChange={e => setFormData({ ...formData, productName: e.target.value })} />
+                        </div>
+                        {fields.map(f => (
+                            <div key={f.id} style={{ width: '140px' }}>
+                                <span className="saas-lot-label-tiny">{f.label.toUpperCase()}</span>
+                                <input className="saas-input-box" required={f.required} type={f.type} placeholder="..." value={dynamicData[f.id] || ''} onChange={e => setDynamicData({ ...dynamicData, [f.id]: e.target.value })} />
+                            </div>
+                        ))}
+                        <div style={{ marginLeft: 'auto' }}>
+                            <button type="submit" className="btn btn-primary" disabled={saving} style={{ background: 'var(--color-accent-blue)', display: 'flex', gap: '0.4rem' }}>
+                                {editingId ? 'Update' : 'Add Entry'}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            {/* Registry Table */}
+            <div style={{ overflowX: 'auto', maxHeight: '50vh' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 5 }}>
+                        <tr style={{ background: '#1e293b', color: 'white' }}>
+                            <th style={{ padding: '0.75rem 1.5rem', textAlign: 'left' }}>Vendor</th>
+                            <th style={{ padding: '0.75rem 1.5rem', textAlign: 'left' }}>Brand</th>
+                            <th style={{ padding: '0.75rem 1.5rem', textAlign: 'left' }}>Product / Item</th>
+                            {fields.map(f => (
+                                <th key={f.id} style={{ padding: '0.75rem 1.5rem', textAlign: 'left' }}>{f.label}</th>
+                            ))}
+                            <th style={{ padding: '0.75rem 1.5rem', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredRegistry.map(item => (
+                            <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '0.75rem 1.5rem', fontWeight: 'bold' }}>{item.vendorName}</td>
+                                <td style={{ padding: '0.75rem 1.5rem' }}>{item.brandName}</td>
+                                <td style={{ padding: '0.75rem 1.5rem' }}>{item.productName || '—'}</td>
+                                {fields.map(f => (
+                                    <td key={f.id} style={{ padding: '0.75rem 1.5rem', color: '#64748b' }}>{item[f.id] || '—'}</td>
+                                ))}
+                                <td style={{ padding: '0.75rem 1.5rem', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                                    <button onClick={() => startEdit(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent-blue)' }}><Edit2 size={16} /></button>
+                                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>
+                                </td>
+                            </tr>
+                        ))}
+                        {filteredRegistry.length === 0 && (
+                            <tr><td colSpan={fields.length + 3} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>No registry records found.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}

@@ -10,11 +10,17 @@ import AdminDashboard from './pages/AdminDashboard';
 import LogisticsPortal from './pages/LogisticsPortal';
 import TicketsPortal from './pages/TicketsPortal';
 import PurchaseOrders from './pages/PurchaseOrders';
+import GoodsCheckIn from './pages/GoodsCheckIn';
+import ProfileSetup from './components/ProfileSetup';
+import { useAuth } from './contexts/AuthContext';
 
 function App() {
+  const { currentUser } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+  const toggleCollapse = () => setIsSidebarCollapsed(!isSidebarCollapsed);
   const closeSidebar = () => setIsSidebarOpen(false);
 
   return (
@@ -22,7 +28,7 @@ function App() {
       <div className="app-container">
         <Navbar toggleSidebar={toggleSidebar} />
         <div className="main-layout">
-          <Sidebar isOpen={isSidebarOpen} closeSidebar={closeSidebar} />
+          <Sidebar isOpen={isSidebarOpen} isCollapsed={isSidebarCollapsed} toggleCollapse={toggleCollapse} closeSidebar={closeSidebar} />
           {/* Overlay for mobile sidebar */}
           {isSidebarOpen && (
             <div 
@@ -34,7 +40,7 @@ function App() {
               className="mobile-overlay"
             />
           )}
-          <main className="content-area">
+          <main className={`content-area ${isSidebarCollapsed ? 'collapsed' : ''}`}>
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/catalogue" element={<Catalogue />} />
@@ -44,6 +50,8 @@ function App() {
               <Route path="/bills" element={<LogisticsPortal type="bills" title="Bill Entry" />} />
               <Route path="/tickets" element={<TicketsPortal />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
+              <Route path="/check-in" element={<GoodsCheckIn />} />
+              <Route path="/setup-company" element={<ProfileSetup />} />
             </Routes>
           </main>
         </div>
